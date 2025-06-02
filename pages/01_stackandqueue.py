@@ -2,78 +2,90 @@ import streamlit as st
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="스택과 큐 시각화", layout="centered")
-st.title("📚 스택과 큐 (Stack & Queue) 시각화")
+st.title("📚 Stack & Queue 시각화")
 
-st.markdown("""
-## 🧱 자료구조 소개
-**스택(Stack)**: 후입선출(LIFO)의 구조입니다. 마지막에 들어온 데이터가 먼저 나갑니다.  
-**큐(Queue)**: 선입선출(FIFO)의 구조입니다. 먼저 들어온 데이터가 먼저 나갑니다.
-""")
-
-# 데이터 초기화
+# 초기 상태 설정
 if "stack" not in st.session_state:
     st.session_state.stack = []
-
 if "queue" not in st.session_state:
     st.session_state.queue = []
 
-# 데이터 조작 UI
-st.sidebar.header("📥 자료 추가/삭제")
-selected_ds = st.sidebar.radio("자료구조 선택", ("Stack", "Queue"))
-
-input_val = st.sidebar.text_input("추가할 값", "")
+# UI
+st.sidebar.header("📥 조작 패널")
+data_structure = st.sidebar.radio("자료구조 선택", ("Stack", "Queue"))
+element = st.sidebar.text_input("추가할 값", key="element")
 
 if st.sidebar.button("➕ 추가"):
-    if input_val:
-        if selected_ds == "Stack":
-            st.session_state.stack.append(input_val)
+    if element:
+        if data_structure == "Stack":
+            st.session_state.stack.append(element)
         else:
-            st.session_state.queue.append(input_val)
+            st.session_state.queue.append(element)
 
 if st.sidebar.button("➖ 삭제"):
-    if selected_ds == "Stack":
-        if st.session_state.stack:
-            st.session_state.stack.pop()
-    else:
-        if st.session_state.queue:
-            st.session_state.queue.pop(0)
+    if data_structure == "Stack" and st.session_state.stack:
+        st.session_state.stack.pop()
+    elif data_structure == "Queue" and st.session_state.queue:
+        st.session_state.queue.pop(0)
 
 # 시각화 함수
-def draw_structure(structure, title):
+def visualize_stack(stack):
     fig = go.Figure()
-
-    for i, val in enumerate(reversed(structure)):
+    height = len(stack)
+    for i, val in enumerate(reversed(stack)):
         fig.add_shape(
             type="rect",
-            x0=0, x1=1,
-            y0=i, y1=i+1,
-            line=dict(color="RoyalBlue"),
-            fillcolor="LightSkyBlue"
+            x0=0, y0=i, x1=1, y1=i+1,
+            line=dict(color="black"),
+            fillcolor="skyblue"
         )
         fig.add_trace(go.Scatter(
             x=[0.5],
             y=[i + 0.5],
             text=[val],
             mode="text",
-            textfont=dict(size=20)
+            textfont=dict(size=18)
         ))
-
     fig.update_layout(
-        height=400,
-        width=200,
-        title=title,
-        xaxis=dict(showticklabels=False),
-        yaxis=dict(showticklabels=False),
-        margin=dict(t=50, l=10, r=10, b=10)
+        height=max(300, 60 * height),
+        width=300,
+        title="Stack (LIFO)",
+        xaxis=dict(showticklabels=False, range=[0, 1]),
+        yaxis=dict(showticklabels=False, range=[0, height]),
+        margin=dict(l=0, r=0, t=50, b=0)
     )
     return fig
 
-# 출력
-if selected_ds == "Stack":
-    st.subheader("🧱 Stack 시각화")
-    fig = draw_structure(st.session_state.stack, "스택 구조 (LIFO)")
-    st.plotly_chart(fig)
+def visualize_queue(queue):
+    fig = go.Figure()
+    width = len(queue)
+    for i, val in enumerate(queue):
+        fig.add_shape(
+            type="rect",
+            x0=i, y0=0, x1=i+1, y1=1,
+            line=dict(color="black"),
+            fillcolor="lightgreen"
+        )
+        fig.add_trace(go.Scatter(
+            x=[i + 0.5],
+            y=[0.5],
+            text=[val],
+            mode="text",
+            textfont=dict(size=18)
+        ))
+    fig.update_layout(
+        height=200,
+        width=max(300, 100 * width),
+        title="Queue (FIFO)",
+        xaxis=dict(showticklabels=False, range=[0, width]),
+        yaxis=dict(showticklabels=False, range=[0, 1]),
+        margin=dict(l=0, r=0, t=50, b=0)
+    )
+    return fig
+
+# 시각화 출력
+if data_structure == "Stack":
+    st.plotly_chart(visualize_stack(st.session_state.stack), use_container_width=True)
 else:
-    st.subheader("🧱 Queue 시각화")
-    fig = draw_structure(st.session_state.queue, "큐 구조 (FIFO)")
-    st.plotly_chart(fig)
+    st.plotly_chart(visualize_queue(st.session_state.queue), use_container_width=True)
+
