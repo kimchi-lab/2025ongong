@@ -1,27 +1,37 @@
 import streamlit as st
-import folium
-from streamlit_folium import st_folium
+import pandas as pd
+import plotly.express as px
 
-st.title("🗺️ 나만의 위치 북마크 지도")
+# 데이터 로드
+df = pd.read_csv("people_gender.csv", encoding="cp949")
 
-st.write("아래에 장소 정보를 입력하고 지도에 표시해보세요!")
+# 지역 선택
+regions = df[df["행정구역"].str.contains("\\(")]["행정구역"].unique()
+selected_region = st.selectbox("지역 선택", regions)
 
-# 장소 입력
-place = st.text_input("장소 이름", value="서울 시청")
-lat = st.number_input("위도 (Latitude)", value=37.5665, format="%.6f")
-lon = st.number_input("경도 (Longitude)", value=12
-6.9780, format="%.6f")
+# 연령대 선택
+age_min, age_max = st.slider("연령대 범위 선택", min_value=0, max_value=100, value=(0, 100), step=5)
 
-# 세션 상태 저장
-if "places" not in st.session_state:
-    st.session_state.places = []
+# 선택한 지역의 데이터만 추출
+region_data = df[df["행정구역"] == selected_region].iloc[0]
 
-if st.button("지도에 추가하기"):
-    st.session_state.places.append((place, lat, lon))
+# 남성과 여성 컬럼 분리
+male_cols = [col for col in df.columns if "남_" in col and "세" in col]
+female_cols = [col for col in df.columns if "여_" in col and "세" in col]
+ages = [int(col.split("_")[-1].replace("세", "").replace(" 이상", "100")) for col in male_cols]
 
-# 지도 그리기
-m = folium.Map(location=[37.5665, 126.9780], zoom_start=6)
-for name, lat, lon in st.session_state.places:
-    folium.Marker([lat, lon], tooltip=name).add_to(m)
+# 필터링 및 숫자 정리
+male_values = [(age, int(str(region_data[col]).replace(",", ""))) for age, col in zip(ages, male_cols) if age_min <= age <= age_max]
+female_values = [(age, -int(str(region_data[col]).replace(",", ""))) for age, col in zip(ages, female_cols) if age_min <= age <= age_max]
 
-st_folium(m, width=700, height=500)
+# 시각화용 데이터프레임 생성
+df_plot = pd.DataFrame(male_values + female_values, columns=["연령", "인구수"])
+df_plot["성별"] = ["남성"] * len(male_values) + ["여성"] * len(female_values)
+
+# 인구 피라미드 그리기
+fig = px.bar(df_plot, x="인구수", y="연령", color="성별", orientation="h",
+             title=f"{selected_region} 인구 피라미드", height=700)
+fig.update_layout(yaxis=dict(autorange="reversed"))
+
+# 출력
+st.plotly_chart(fig)
