@@ -1,4 +1,5 @@
 streamlit
-plotly
+pandas
+folium
+scikit-learn
 streamlit-folium
-yfinance
