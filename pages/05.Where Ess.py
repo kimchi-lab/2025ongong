@@ -29,8 +29,8 @@ def selection_sort_top_n(df, key, top_n):
     return pd.DataFrame(data[:top_n])
 
 st.set_page_config(layout="wide")
-st.title("📍 ESS 적합도 분석 + 선택 정렬 + K-d 트리 탐색")
-st.caption("정렬 알고리즘과 탐색 알고리즘을 활용한 공간 기반 데이터 분석 프로젝트")
+st.title("📍 ESS 적합도 분석 ")
+st.caption("직접 위치를 정해 근접 위치에서 적합도를 정해줍니다 !")
 
 uploaded_file = st.file_uploader("CSV 파일 업로드", type=["csv"])
 if uploaded_file:
@@ -100,6 +100,6 @@ if uploaded_file:
         st_folium(map2, height=500)
 
     # ✅ 선택 정렬 알고리즘으로 ESS 적합도 순위 출력
-    st.subheader("🏆 선택 정렬 기반 ESS 적합도 순위 Top 10")
+    st.subheader("🏆 ESS 적합도 순위 Top 10")
     sorted_top10 = selection_sort_top_n(df, 'ESS_적합도', 10)
     st.dataframe(sorted_top10[['지점정보', 'ESS_적합도', '평균기온편차(°C)', '강수량(mm)']])
