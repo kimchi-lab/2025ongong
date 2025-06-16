@@ -10,7 +10,7 @@ st.title("📡 Prim 알고리즘 기반 최적 통신망 구축")
 
 # --- 도분초(DMS) -> 십진수 변환 함수 ---
 def dms_to_decimal(dms):
-    parts = re.findall(r"[\d.]+", dms)
+    parts = re.findall(r"[\d.]+", str(dms))
     if len(parts) == 3:
         d, m, s = map(float, parts)
         return round(d + m / 60 + s / 3600, 6)
@@ -40,8 +40,8 @@ if uploaded_file:
 
     if {"기지국", "위도", "경도"}.issubset(df.columns):
 
-        # DMS 형식이라면 변환
-        if df['위도'].dtype == object:
+        # DMS 문자열이면 변환
+        if df['위도'].astype(str).str.contains("°").any():
             df['위도'] = df['위도'].apply(dms_to_decimal)
             df['경도'] = df['경도'].apply(dms_to_decimal)
 
@@ -50,6 +50,10 @@ if uploaded_file:
             df['위도'].between(-90, 90) &
             df['경도'].between(-180, 180)
         ].reset_index(drop=True)
+
+        if len(df) < 2:
+            st.warning("⚠️ 유효한 기지국 좌표가 2개 미만입니다. MST를 생성할 수 없습니다.")
+            st.stop()
 
         # --- 거리 기반 그래프 생성 ---
         edges = []
