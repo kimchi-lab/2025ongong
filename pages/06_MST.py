@@ -4,9 +4,10 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from geopy.distance import geodesic
 import re
+import pydeck as pdk
 
-st.set_page_config(page_title="MST Network Simulator", layout="wide")
-st.title("📡 Optimized MST Communication Network")
+st.set_page_config(page_title="MST 통신망 최적화 시뮬레이터", layout="wide")
+st.title("📡 MST 통신망 최적 구축 경로 시뮬레이션")
 
 # --- DMS to Decimal Converter ---
 def dms_to_decimal(dms):
@@ -20,12 +21,12 @@ def dms_to_decimal(dms):
         return None
 
 st.markdown("""
-**CSV Format:** Station, Latitude, Longitude, Transmission Speed (Mbps)
-- Latitude/Longitude supports both DMS (e.g., `127° 09' 47.65"`) and decimal format
-- Transmission speed must be a number (higher is better)
+**CSV 형식 예시:** 기지국, 위도, 경도, 전송속도 (Mbps)
+- 위도/경도는 도분초 또는 소수형 모두 지원
+- 전송속도는 숫자 (클수록 빠름)
 """)
 
-uploaded_file = st.file_uploader("📂 Upload your CSV file", type=["csv"])
+uploaded_file = st.file_uploader("📂 CSV 파일 업로드", type=["csv"])
 
 if uploaded_file:
     try:
@@ -47,12 +48,14 @@ if uploaded_file:
         ].reset_index(drop=True)
 
         if len(df) < 2:
-            st.warning("⚠️ At least two valid stations are required.")
+            st.warning("⚠️ 최소 2개 이상의 기지국이 필요합니다.")
             st.stop()
 
         # --- Build graph with distance and speed ---
         edges = []
+        coord_dict = {}
         for i in range(len(df)):
+            coord_dict[df.loc[i, '기지국']] = (df.loc[i, '위도'], df.loc[i, '경도'])
             for j in range(i + 1, len(df)):
                 coord1 = (df.loc[i, '위도'], df.loc[i, '경도'])
                 coord2 = (df.loc[j, '위도'], df.loc[j, '경도'])
@@ -67,26 +70,62 @@ if uploaded_file:
         G.add_weighted_edges_from(edges)
         mst = nx.minimum_spanning_tree(G, algorithm="prim")
 
-        st.subheader("📈 MST Result (Based on Speed and Distance)")
+        st.subheader("📈 MST 결과 테이블")
         mst_edges = [
             {"From": u, "To": v, "Weight": round(d['weight'], 2)}
             for u, v, d in mst.edges(data=True)
         ]
         st.dataframe(pd.DataFrame(mst_edges))
 
-        # --- Map Visualization ---
-        st.subheader("🗺️ Station Map")
-        map_df = df.rename(columns={"기지국": "Station", "위도": "lat", "경도": "lon"})
-        st.map(map_df[['lat', 'lon']])
+        # --- 지도 위에 MST 연결선까지 시각화 ---
+        st.subheader("🗺️ 지도 기반 MST 연결 시각화")
+        line_data = []
+        for u, v in mst.edges():
+            coord_u = coord_dict[u]
+            coord_v = coord_dict[v]
+            line_data.append({
+                "from_lat": coord_u[0], "from_lon": coord_u[1],
+                "to_lat": coord_v[0], "to_lon": coord_v[1]
+            })
+
+        midpoint = df[['위도', '경도']].mean().values.tolist()
+
+        st.pydeck_chart(pdk.Deck(
+            initial_view_state=pdk.ViewState(
+                latitude=midpoint[0],
+                longitude=midpoint[1],
+                zoom=14,
+                pitch=0,
+            ),
+            layers=[
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=df,
+                    get_position='[경도, 위도]',
+                    get_fill_color='[0, 128, 255, 160]',
+                    get_radius=30,
+                ),
+                pdk.Layer(
+                    "LineLayer",
+                    data=line_data,
+                    get_source_position='[from_lon, from_lat]',
+                    get_target_position='[to_lon, to_lat]',
+                    get_width=3,
+                    get_color='[0, 255, 0, 180]',
+                    pickable=True,
+                ),
+            ]
+        ))
 
         # --- Graph Visualization ---
+        st.subheader("📊 네트워크 그래프")
         pos = {row['기지국']: (row['경도'], row['위도']) for _, row in df.iterrows()}
 
         fig, ax = plt.subplots(figsize=(10, 8))
         nx.draw(G, pos, with_labels=True, node_color='lightgray', edge_color='gray', node_size=500, ax=ax)
         nx.draw(mst, pos, with_labels=True, node_color='skyblue', edge_color='blue', width=2, node_size=700, ax=ax)
-        plt.title("MST Graph View")
+        plt.title("MST 네트워크 그래프")
         st.pyplot(fig)
 
     else:
-        st.error("❗ CSV must contain columns: '기지국', '위도', '경도', '전송속도'")
+        st.error("❗ CSV 파일에 '기지국', '위도', '경도', '전송속도' 열이 필요합니다.")
