@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from geopy.distance import geodesic
 import re
 
-st.set_page_config(page_title="통신망 MST 시뮬레이터", layout="wide")
-st.title("📡 전송속도 + 거리 기반 MST 통신망 구축")
+st.set_page_config(page_title="network MST simulator", layout="wide")
+
 
 # --- 도분초(DMS) → 십진수 변환 ---
 def dms_to_decimal(dms):
