@@ -10,11 +10,12 @@ st.title("📡 Prim 알고리즘 기반 최적 통신망 구축")
 
 # --- 도분초(DMS) -> 십진수 변환 함수 ---
 def dms_to_decimal(dms):
-    parts = re.findall(r"[\d.]+", str(dms))
-    if len(parts) == 3:
-        d, m, s = map(float, parts)
+    try:
+        dms = str(dms).replace("°", " ").replace("'", " ").replace("\"", " ")
+        d, m, s = map(float, dms.strip().split())
         return round(d + m / 60 + s / 3600, 6)
-    return None
+    except:
+        return None
 
 # --- 파일 업로드 ---
 uploaded_file = st.file_uploader("기지국 위치 CSV 파일 업로드 (기지국, 위도, 경도)", type=["csv"])
