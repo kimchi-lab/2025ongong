@@ -21,10 +21,22 @@ uploaded_file = st.file_uploader("기지국 위치 CSV 파일 업로드 (기지�
 
 if uploaded_file:
     try:
-        # 인코딩 문제 방지
         df = pd.read_csv(uploaded_file, encoding="utf-8")
+        if df.empty:
+            st.error("❗ CSV 파일이 비어 있습니다. 데이터를 확인해주세요.")
+            st.stop()
     except UnicodeDecodeError:
-        df = pd.read_csv(uploaded_file, encoding="cp949")
+        try:
+            df = pd.read_csv(uploaded_file, encoding="cp949")
+            if df.empty:
+                st.error("❗ CSV 파일이 비어 있습니다. 데이터를 확인해주세요.")
+                st.stop()
+        except Exception as e:
+            st.error(f"❗ 파일을 읽는 중 오류 발생: {e}")
+            st.stop()
+    except Exception as e:
+        st.error(f"❗ 파일을 읽는 중 오류 발생: {e}")
+        st.stop()
 
     if {"기지국", "위도", "경도"}.issubset(df.columns):
 
