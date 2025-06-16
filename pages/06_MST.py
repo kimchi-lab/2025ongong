@@ -20,7 +20,12 @@ def dms_to_decimal(dms):
 uploaded_file = st.file_uploader("기지국 위치 CSV 파일 업로드 (기지국, 위도, 경도)", type=["csv"])
 
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+    try:
+        # 인코딩 문제 방지
+        df = pd.read_csv(uploaded_file, encoding="utf-8", errors="ignore")
+    except UnicodeDecodeError:
+        df = pd.read_csv(uploaded_file, encoding="cp949")
+
     if {"기지국", "위도", "경도"}.issubset(df.columns):
 
         # DMS 형식이라면 변환
@@ -66,4 +71,6 @@ if uploaded_file:
         st.pyplot(fig)
 
     else:
+        st.error("❗ CSV 파일은 반드시 '기지국', '위도', '경도' 열을 포함해야 합니다.")
+
         st.error("❗ CSV 파일은 반드시 '기지국', '위도', '경도' 열을 포함해야 합니다.")
