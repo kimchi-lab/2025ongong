@@ -59,8 +59,8 @@ if uploaded_file:
         edges = []
         for i in range(len(df)):
             for j in range(i + 1, len(df)):
-                coord1 = (df.loc[i, '위도'], df.loc[i, '경도'])
-                coord2 = (df.loc[j, '위도'], df.loc[j, '경도'])
+                coord1 = (df.loc[i, '경도'], df.loc[i, '위도'])
+                coord2 = (df.loc[j, '경도'], df.loc[j, '위도'])
                 dist = geodesic(coord1, coord2).meters
                 edges.append((df.loc[i, '기지국'], df.loc[j, '기지국'], dist))
 
