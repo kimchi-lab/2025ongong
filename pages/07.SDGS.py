@@ -7,9 +7,9 @@ from geopy.distance import geodesic
 from geopy.extra.rate_limiter import RateLimiter
 from streamlit_folium import st_folium
 
-# -------------------------------
-# GitHub에서 CSV 불러오기
-# -------------------------------
+# -----------------------------------
+# ✅ GitHub raw URL 경로 (파일명 정확히 일치해야 함)
+# -----------------------------------
 @st.cache_data
 def load_data():
     url_waste = "https://raw.githubusercontent.com/kimchi-lab/2025ongong/main/YongIn_Wastewater%20discharge%20facility_20240213.csv"
@@ -23,9 +23,9 @@ waste_df, rain_df = load_data()
 
 st.title("🌐 MST 기반 폐수-빗물이용시설 최적 연결망 시각화")
 
-# -------------------------------
-# 위경도 변환 (geopy)
-# -------------------------------
+# -----------------------------------
+# 📍 주소 → 위도/경도 변환 (OpenStreetMap)
+# -----------------------------------
 @st.cache_data
 def geocode_address(df, address_col):
     geolocator = Nominatim(user_agent="geo_app")
@@ -43,19 +43,19 @@ def geocode_address(df, address_col):
     df[['lat', 'lon']] = df[address_col].apply(get_lat_lon)
     return df.dropna(subset=['lat', 'lon'])
 
-# 실제 주소 컬럼명 지정
+# 📍 주소 컬럼 지정
 waste_df = geocode_address(waste_df, "사업장소재지")
 rain_df = geocode_address(rain_df, "시설물주소")
 
-# -------------------------------
-# 거리 제한 슬라이더
-# -------------------------------
+# -----------------------------------
+# 📏 거리 제한 슬라이더
+# -----------------------------------
 max_dist_km = st.slider("📏 연결 가능한 최대 거리 (km)", 0.5, 10.0, 3.0, step=0.1)
 max_dist_m = max_dist_km * 1000
 
-# -------------------------------
-# 지도 생성
-# -------------------------------
+# -----------------------------------
+# 🌍 지도 생성
+# -----------------------------------
 center = [waste_df['lat'].mean(), waste_df['lon'].mean()]
 m = folium.Map(location=center, zoom_start=11)
 
@@ -73,9 +73,9 @@ for _, row in rain_df.iterrows():
         icon=folium.Icon(color='green')
     ).add_to(m)
 
-# -------------------------------
-# MST 그래프 구성
-# -------------------------------
+# -----------------------------------
+# 🔗 MST 연결 구성
+# -----------------------------------
 edges = []
 for i, w_row in waste_df.iterrows():
     for j, r_row in rain_df.iterrows():
@@ -104,6 +104,7 @@ else:
 
         folium.PolyLine([coord1, coord2], color='blue', weight=2).add_to(m)
 
+    # 연결 정보 표 출력
     st.subheader("🔗 MST 연결 정보")
     edge_table = pd.DataFrame([
         {
@@ -114,8 +115,8 @@ else:
     ])
     st.dataframe(edge_table)
 
-# -------------------------------
+# -----------------------------------
 # 지도 출력
-# -------------------------------
+# -----------------------------------
 st.subheader("🗺️ MST 지도 시각화")
 st_folium(m, width=800, height=600)
