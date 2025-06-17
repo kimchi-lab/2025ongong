@@ -1,5 +1,6 @@
 streamlit
 pandas
-matplotlib
 geopy
+folium
 networkx
+streamlit-folium
