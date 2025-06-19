@@ -6,6 +6,7 @@ from folium.plugins import HeatMap
 from streamlit_folium import st_folium
 from geopy.distance import geodesic
 import networkx as nx
+import chardet
 
 # -----------------------------
 # 파일 업로드
@@ -14,24 +15,26 @@ st.sidebar.title("📂 CSV 파일 업로드")
 fire_file = st.sidebar.file_uploader("🔥 산불 통계 데이터 업로드", type="csv")
 shelter_file = st.sidebar.file_uploader("🏠 대피소 목록 업로드", type="csv")
 
+def detect_encoding(file):
+    raw = file.read()
+    result = chardet.detect(raw)
+    file.seek(0)
+    return result['encoding']
+
 if fire_file and shelter_file:
     try:
-        fires = pd.read_csv(fire_file, encoding="utf-8", errors="ignore")
-    except UnicodeDecodeError:
-        try:
-            fires = pd.read_csv(fire_file, encoding="cp949", errors="ignore")
-        except:
-            st.error("🔥 산불 데이터 파일 인코딩 오류가 발생했습니다.")
-            st.stop()
+        fire_encoding = detect_encoding(fire_file)
+        fires = pd.read_csv(fire_file, encoding=fire_encoding)
+    except Exception as e:
+        st.error(f"🔥 산불 데이터 파일 로딩 실패: {e}")
+        st.stop()
 
     try:
-        shelters = pd.read_csv(shelter_file, encoding="utf-8", errors="ignore")
-    except UnicodeDecodeError:
-        try:
-            shelters = pd.read_csv(shelter_file, encoding="cp949", errors="ignore")
-        except:
-            st.error("🏠 대피소 데이터 파일 인코딩 오류가 발생했습니다.")
-            st.stop()
+        shelter_encoding = detect_encoding(shelter_file)
+        shelters = pd.read_csv(shelter_file, encoding=shelter_encoding)
+    except Exception as e:
+        st.error(f"🏠 대피소 데이터 파일 로딩 실패: {e}")
+        st.stop()
 
     # -----------------------------
     # 데이터 전처리
