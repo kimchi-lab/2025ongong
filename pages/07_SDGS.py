@@ -16,14 +16,22 @@ shelter_file = st.sidebar.file_uploader("🏠 대피소 목록 업로드", type=
 
 if fire_file and shelter_file:
     try:
-        fires = pd.read_csv(fire_file, encoding="cp949")
-    except:
-        fires = pd.read_csv(fire_file)
+        fires = pd.read_csv(fire_file, encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            fires = pd.read_csv(fire_file, encoding="cp949")
+        except:
+            st.error("🔥 산불 데이터 파일 인코딩 오류가 발생했습니다.")
+            st.stop()
 
     try:
-        shelters = pd.read_csv(shelter_file, encoding="cp949")
-    except:
-        shelters = pd.read_csv(shelter_file)
+        shelters = pd.read_csv(shelter_file, encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            shelters = pd.read_csv(shelter_file, encoding="cp949")
+        except:
+            st.error("🏠 대피소 데이터 파일 인코딩 오류가 발생했습니다.")
+            st.stop()
 
     # -----------------------------
     # 데이터 전처리
