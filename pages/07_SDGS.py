@@ -37,8 +37,11 @@ if fire_file and shelter_file:
         st.stop()
 
     # -----------------------------
-    # 열 이름 확인 및 자동 탐지
+    # 열 이름 확인 및 정제
     # -----------------------------
+    fires.columns = fires.columns.str.strip().str.replace('"', '')
+    shelters.columns = shelters.columns.str.strip().str.replace('"', '')
+
     st.write("🔥 산불 데이터 열 목록:", fires.columns.tolist())
     st.write("🏠 대피소 데이터 열 목록:", shelters.columns.tolist())
 
