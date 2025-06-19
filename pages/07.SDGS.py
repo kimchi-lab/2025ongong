@@ -1,51 +1,104 @@
 import streamlit as st
 import pandas as pd
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
 import folium
+from folium.plugins import HeatMap
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from geopy.distance import geodesic
+import networkx as nx
 from streamlit_folium import st_folium
 
-st.set_page_config(layout="wide")
-st.title("💧 폐수배출시설 ↔ 빗물이용시설 위치 시각화")
+# ---------------------
+# 데이터 불러오기
+# ---------------------
+@st.cache_data
+def load_data():
+    fires = pd.read_csv("산림청_산불상황관제시스템 산불통계데이터_20241016.csv")
+    shelters = pd.read_csv("chemical_shelters.csv")
+    return fires, shelters
 
-# 파일 업로드
-waste_file = st.file_uploader("1️⃣ 폐수배출시설 CSV 업로드", type="csv")
-rain_file = st.file_uploader("2️⃣ 빗물이용시설 CSV 업로드", type="csv")
+fires, shelters = load_data()
 
-if waste_file and rain_file:
-    # 데이터 읽기
-    try:
-        waste_df = pd.read_csv(waste_file, encoding='cp949')
-        rain_df = pd.read_csv(rain_file, encoding='cp949')
-    except UnicodeDecodeError:
-        waste_df = pd.read_csv(waste_file, encoding='utf-8')
-        rain_df = pd.read_csv(rain_file, encoding='utf-8')
+# ---------------------
+# 기후 변수 샘플 추가
+# ---------------------
+fires = fires.dropna(subset=["발생장소_시도", "발생장소_시군구"])
+fires = fires.sample(50, random_state=0)
 
-    # 지오코딩 설정
-    geolocator = Nominatim(user_agent="geo_app")
-    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+import random
+random.seed(42)
+fires["기온(℃)"] = [round(random.uniform(10, 30), 1) for _ in range(len(fires))]
+fires["습도(%)"] = [random.randint(30, 90) for _ in range(len(fires))]
+fires["풍속(m/s)"] = [round(random.uniform(0.5, 5.0), 1) for _ in range(len(fires))]
+fires["강수량(mm)"] = [round(random.uniform(0, 10), 1) for _ in range(len(fires))]
 
-    def get_lat_lon(addr):
-        try:
-            location = geocode(addr)
-            if location:
-                return pd.Series([location.latitude, location.longitude])
-        except:
-            return pd.Series([None, None])
-        return pd.Series([None, None])
+fires["산불발생여부"] = fires["피해면적_합계"].apply(lambda x: 0 if pd.isna(x) or x == 0 else 1)
 
-    with st.spinner("⏳ 주소 → 위경도 변환 중..."):
-        waste_df[['lat', 'lon']] = waste_df["사업장소재지"].apply(get_lat_lon)
-        rain_df[['lat', 'lon']] = rain_df["시설물주소"].apply(get_lat_lon)
+# ---------------------
+# 로지스틱 회귀 모델 학습
+# ---------------------
+X = fires[["기온(℃)", "습도(%)", "풍속(m/s)", "강수량(mm)"]]
+y = fires["산불발생여부"]
+model = LogisticRegression().fit(X, y)
 
-    # 지도 생성
-    m = folium.Map(location=[37.25, 127.2], zoom_start=11)
+# ---------------------
+# Streamlit UI
+# ---------------------
+st.title("산불 위험 예측 및 대피소 안내 시스템")
 
-    for _, row in waste_df.dropna(subset=['lat', 'lon']).iterrows():
-        folium.Marker([row['lat'], row['lon']], tooltip="폐수배출시설", icon=folium.Icon(color='red')).add_to(m)
+selected_city = st.selectbox("시도 선택", sorted(fires["발생장소_시도"].unique()))
+selected_gu = st.selectbox("시군구 선택", sorted(fires[fires["발생장소_시도"] == selected_city]["발생장소_시군구"].unique()))
 
-    for _, row in rain_df.dropna(subset=['lat', 'lon']).iterrows():
-        folium.Marker([row['lat'], row['lon']], tooltip="빗물이용시설", icon=folium.Icon(color='blue')).add_to(m)
+temp = st.slider("기온 (℃)", 10, 35, 25)
+humidity = st.slider("습도 (%)", 20, 100, 50)
+wind = st.slider("풍속 (m/s)", 0, 10, 2)
+rain = st.slider("강수량 (mm)", 0, 20, 1)
 
-    st.markdown("### 🌍 시각화된 지도")
-    st_data = st_folium(m, width=800, height=600)
+# ---------------------
+# 예측 및 시각화 준비
+# ---------------------
+X_input = pd.DataFrame([[temp, humidity, wind, rain]], columns=X.columns)
+pred = model.predict(X_input)[0]
+pred_proba = model.predict_proba(X_input)[0][1]
+st.subheader("🌡️ 산불 위험도 예측")
+st.write(f"예측 결과: {'🔥 위험' if pred else '✅ 낮음'} (확률: {pred_proba:.2%})")
+
+# ---------------------
+# 위치 기반 좌표 설정
+# ---------------------
+from geopy.geocoders import Nominatim
+geolocator = Nominatim(user_agent="fire_app")
+location = geolocator.geocode(f"{selected_city} {selected_gu}")
+user_coord = (location.latitude, location.longitude)
+
+# ---------------------
+# 가장 가까운 대피소 찾기 (다익스트라 유사 방식)
+# ---------------------
+shelters["거리(km)"] = shelters.apply(lambda row: geodesic(user_coord, (row["위도"], row["경도"])).km, axis=1)
+closest_shelters = shelters.sort_values("거리(km)").head(5)
+
+# ---------------------
+# Folium 지도 생성
+# ---------------------
+m = folium.Map(location=user_coord, zoom_start=12)
+folium.Marker(user_coord, tooltip="현재 위치", icon=folium.Icon(color="red")).add_to(m)
+
+for _, row in closest_shelters.iterrows():
+    folium.Marker(
+        [row["위도"], row["경도"]],
+        tooltip=f"대피소: {row['시설명']}",
+        icon=folium.Icon(color="blue", icon="info-sign")
+    ).add_to(m)
+    folium.PolyLine([user_coord, (row["위도"], row["경도"])]).add_to(m)
+
+# 위험 지역 HeatMap (샘플)
+heat_data = fires.dropna(subset=["위도", "경도"])
+if not heat_data.empty:
+    HeatMap(heat_data[["위도", "경도"]].values, radius=15).add_to(m)
+
+st.subheader("🗺️ 지도 시각화")
+st_data = st_folium(m, width=700, height=500)
+
+st.markdown("---")
+st.caption("데이터 출처: 산림청, 환경부, 공공데이터포털")
