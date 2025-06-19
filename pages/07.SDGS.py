@@ -16,7 +16,7 @@ from geopy.geocoders import Nominatim
 # ---------------------
 @st.cache_data
 def load_data():
-    fires = pd.read_csv("산림청_산불상황관제시스템 산불통계데이터_20241016.csv", encoding='cp949')
+    fires = pd.read_csv("fire_data.csv", encoding='cp949')
     shelters = pd.read_csv("chemical_shelters.csv")
     return fires, shelters
 
