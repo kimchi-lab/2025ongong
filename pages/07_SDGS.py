@@ -10,7 +10,7 @@ import numpy as np
 import random
 
 st.set_page_config(layout="wide")
-st.title("🔥 경상도 산불 밀집 지역 및 대피소 연결 시각화")
+st.title(" 다익스트라 기반 산불 밀집 지역 인근 대피소 '')
 
 # 샘플 산불 좌표 (경상도 인근)
 @st.cache_data
