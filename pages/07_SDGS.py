@@ -43,12 +43,27 @@ if fire_file and shelter_file:
     st.write("🏠 대피소 데이터 열 목록:", shelters.columns.tolist())
 
     # -----------------------------
+    # 열 이름 지정
+    # -----------------------------
+    fire_lat_col = "위도"
+    fire_lon_col = "경도"
+    shelter_lat_col = "\"위도\""
+    shelter_lon_col = "\"경도\""
+
+    # -----------------------------
     # 데이터 전처리
     # -----------------------------
-    fires = fires.dropna(subset=["위도", "경도"])
-    shelters = shelters.dropna(subset=["위도", "경도"])
-    fire_coords = fires[["위도", "경도"]].values.tolist()
-    shelter_coords = shelters[["위도", "경도"]].values.tolist()
+    if fire_lat_col not in fires.columns or fire_lon_col not in fires.columns:
+        st.error("🔥 산불 데이터에 '위도' 또는 '경도' 열이 없습니다.")
+        st.stop()
+    if shelter_lat_col not in shelters.columns or shelter_lon_col not in shelters.columns:
+        st.error("🏠 대피소 데이터에 '위도' 또는 '경도' 열이 없습니다.")
+        st.stop()
+
+    fires = fires.dropna(subset=[fire_lat_col, fire_lon_col])
+    shelters = shelters.dropna(subset=[shelter_lat_col, shelter_lon_col])
+    fire_coords = fires[[fire_lat_col, fire_lon_col]].values.tolist()
+    shelter_coords = shelters[[shelter_lat_col, shelter_lon_col]].values.tolist()
 
     # -----------------------------
     # 지도 생성
