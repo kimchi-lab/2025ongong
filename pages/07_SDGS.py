@@ -1,116 +1,70 @@
+# streamlit_app.py
 import streamlit as st
 import pandas as pd
 import folium
 from folium.plugins import HeatMap
-from sklearn.linear_model import LogisticRegression
-from geopy.distance import geodesic
 from streamlit_folium import st_folium
-from geopy.geocoders import Nominatim
-import random
-import chardet
-from io import BytesIO
+from geopy.distance import geodesic
+import networkx as nx
 
-# ---------------------
-# CSV 인코딩 자동 감지
-# ---------------------
-def read_csv_with_detected_encoding(uploaded_file):
-    raw = uploaded_file.read()
-    result = chardet.detect(raw)
-    encoding = result['encoding']
-    return pd.read_csv(BytesIO(raw), encoding=encoding)
+# -----------------------------
+# 파일 업로드
+# -----------------------------
+st.sidebar.title("📂 CSV 파일 업로드")
+fire_file = st.sidebar.file_uploader("🔥 산불 통계 데이터 업로드", type="csv")
+shelter_file = st.sidebar.file_uploader("🏠 대피소 목록 업로드", type="csv")
 
-# ---------------------
-# Streamlit UI
-# ---------------------
-st.title("🌲 산불 위험 예측 및 화학사고 대피소 안내 시스템")
-
-uploaded_fire = st.file_uploader("🔥 산불 데이터 (fire_data.csv)", type="csv")
-uploaded_shelter = st.file_uploader("🏠 대피소 데이터 (chemical_shelters.csv)", type="csv")
-
-if uploaded_fire is not None and uploaded_shelter is not None:
+if fire_file and shelter_file:
     try:
-        fires = read_csv_with_detected_encoding(uploaded_fire)
-        shelters = read_csv_with_detected_encoding(uploaded_shelter)
+        fires = pd.read_csv(fire_file, encoding="cp949")
+    except:
+        fires = pd.read_csv(fire_file)
 
-        # ---------------------
-        # 기후 변수 샘플 추가
-        # ---------------------
-        fires = fires.dropna(subset=["발생장소_시도", "발생장소_시군구"])
-        fires = fires.sample(50, random_state=0)
+    try:
+        shelters = pd.read_csv(shelter_file, encoding="cp949")
+    except:
+        shelters = pd.read_csv(shelter_file)
 
-        random.seed(42)
-        fires["기온(℃)"] = [round(random.uniform(10, 30), 1) for _ in range(len(fires))]
-        fires["습도(%)"] = [random.randint(30, 90) for _ in range(len(fires))]
-        fires["풍속(m/s)"] = [round(random.uniform(0.5, 5.0), 1) for _ in range(len(fires))]
-        fires["강수량(mm)"] = [round(random.uniform(0, 10), 1) for _ in range(len(fires))]
-        fires["산불발생여부"] = fires["피해면적_합계"].apply(lambda x: 0 if pd.isna(x) or x == 0 else 1)
+    # -----------------------------
+    # 데이터 전처리
+    # -----------------------------
+    fires = fires.dropna(subset=["위도", "경도"])
+    shelters = shelters.dropna(subset=["위도", "경도"])
+    fire_coords = fires[["위도", "경도"]].values.tolist()
+    shelter_coords = shelters[["위도", "경도"]].values.tolist()
 
-        # ---------------------
-        # 로지스틱 회귀 모델 학습
-        # ---------------------
-        X = fires[["기온(℃)", "습도(%)", "풍속(m/s)", "강수량(mm)"]]
-        y = fires["산불발생여부"]
-        model = LogisticRegression().fit(X, y)
+    # -----------------------------
+    # 지도 생성
+    # -----------------------------
+    m = folium.Map(location=fire_coords[0], zoom_start=11)
+    HeatMap(fire_coords, radius=15).add_to(m)
 
-        # ---------------------
-        # 사용자 입력
-        # ---------------------
-        selected_city = st.selectbox("시도 선택", sorted(fires["발생장소_시도"].unique()))
-        selected_gu = st.selectbox("시군구 선택", sorted(fires[fires["발생장소_시도"] == selected_city]["발생장소_시군구"].unique()))
+    # -----------------------------
+    # MST (최소신장트리) 계산
+    # -----------------------------
+    G = nx.Graph()
+    for i in range(len(shelter_coords)):
+        for j in range(i + 1, len(shelter_coords)):
+            dist = geodesic(shelter_coords[i], shelter_coords[j]).km
+            G.add_edge(i, j, weight=dist)
 
-        temp = st.slider("기온 (℃)", 10, 35, 25)
-        humidity = st.slider("습도 (%)", 20, 100, 50)
-        wind = st.slider("풍속 (m/s)", 0, 10, 2)
-        rain = st.slider("강수량 (mm)", 0, 20, 1)
+    mst = nx.minimum_spanning_tree(G)
 
-        X_input = pd.DataFrame([[temp, humidity, wind, rain]], columns=X.columns)
-        pred = model.predict(X_input)[0]
-        pred_proba = model.predict_proba(X_input)[0][1]
+    # -----------------------------
+    # 대피소 및 MST 연결 시각화
+    # -----------------------------
+    for idx, coord in enumerate(shelter_coords):
+        folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx+1}").add_to(m)
 
-        st.subheader("🌡️ 산불 위험도 예측")
-        st.write(f"예측 결과: {'🔥 위험' if pred else '✅ 낮음'} (확률: {pred_proba:.2%})")
+    for u, v in mst.edges:
+        point1 = shelter_coords[u]
+        point2 = shelter_coords[v]
+        folium.PolyLine([point1, point2], color="green").add_to(m)
 
-        # ---------------------
-        # 현재 위치 좌표 설정
-        # ---------------------
-        geolocator = Nominatim(user_agent="fire_app")
-        location = geolocator.geocode(f"{selected_city} {selected_gu}")
-        user_coord = (location.latitude, location.longitude)
+    st.subheader("🗺️ 산불 히트맵 및 MST 대피소 연결")
+    st_data = st_folium(m, width=900, height=600)
 
-        # ---------------------
-        # 가장 가까운 대피소 찾기
-        # ---------------------
-        shelters = shelters.dropna(subset=["위도", "경도"])
-        shelters["거리(km)"] = shelters.apply(lambda row: geodesic(user_coord, (row["위도"], row["경도"])).km, axis=1)
-        closest_shelters = shelters.sort_values("거리(km)").head(5)
-
-        # ---------------------
-        # 지도 시각화
-        # ---------------------
-        m = folium.Map(location=user_coord, zoom_start=12)
-        folium.Marker(user_coord, tooltip="현재 위치", icon=folium.Icon(color="red")).add_to(m)
-
-        for _, row in closest_shelters.iterrows():
-            folium.Marker(
-                [row["위도"], row["경도"]],
-                tooltip=f"대피소: {row['시설명'] if '시설명' in row else '이름없음'}",
-                icon=folium.Icon(color="blue", icon="info-sign")
-            ).add_to(m)
-            folium.PolyLine([user_coord, (row["위도"], row["경도"])]).add_to(m)
-
-        # 위험지역 HeatMap (위도/경도 존재할 경우만)
-        if "위도" in fires.columns and "경도" in fires.columns:
-            heat_data = fires.dropna(subset=["위도", "경도"])
-            if not heat_data.empty:
-                HeatMap(heat_data[["위도", "경도"]].values, radius=15).add_to(m)
-
-        st.subheader("🗺️ 지도 시각화")
-        st_folium(m, width=700, height=500)
-
-        st.markdown("---")
-        st.caption("데이터 출처: 산림청, 환경부, 공공데이터포털")
-
-    except Exception as e:
-        st.error(f"❌ 오류 발생: {e}")
+    st.markdown("---")
+    st.caption("데이터 출처: 산림청, 환경부, 공공데이터포털")
 else:
-    st.info("CSV 파일 두 개를 모두 업로드해주세요.")
+    st.warning("좌측 사이드바에서 두 개의 CSV 파일을 업로드하세요.")
