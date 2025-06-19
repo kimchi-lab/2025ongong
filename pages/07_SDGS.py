@@ -1,57 +1,62 @@
+# streamlit_app.py
 import streamlit as st
 import pandas as pd
 import folium
 from folium.plugins import HeatMap
 from streamlit_folium import st_folium
+from sklearn.cluster import KMeans
 from geopy.distance import geodesic
-import networkx as nx
-import random
 
-st.set_page_config(page_title="경상도 산불 히트맵", layout="wide")
-st.title("🔥 경상도 산불 히트맵 & MST 대피소 연결")
+# -----------------------------
+st.set_page_config(layout="wide")
+st.title("🔥 경상도 산불 히트맵 및 대피소 연결 시각화")
 
-# -------------------------------
-# 경상도 내 임의의 산불 발생 좌표
+# 샘플 산불 데이터 (경상도 주변 랜덤 생성)
 fires = pd.DataFrame({
-    "위도": [35.8 + random.uniform(-0.3, 0.3) for _ in range(80)],
-    "경도": [128.8 + random.uniform(-0.3, 0.3) for _ in range(80)]
+    "위도": [35.8 + (i % 5) * 0.05 for i in range(50)],
+    "경도": [128.5 + (i // 5) * 0.03 for i in range(50)]
 })
 
-# 경상도 주요 대피소 예시 좌표
+# 샘플 대피소 데이터 (경상도 주변)
 shelters = pd.DataFrame({
-    "위도": [35.85, 35.92, 35.78, 35.74, 35.88, 36.0],
-    "경도": [128.95, 129.02, 128.85, 128.78, 129.1, 128.9]
+    "위도": [35.85, 35.9, 35.95, 36.0, 36.05],
+    "경도": [128.55, 128.6, 128.65, 128.7, 128.75]
 })
 
-# -------------------------------
-# 지도 시각화 시작
+# -----------------------------
+# 히트맵 시각화 + 중심점 탐지 (KMeans 클러스터링)
+# -----------------------------
 fire_coords = fires[["위도", "경도"]].values.tolist()
 shelter_coords = shelters[["위도", "경도"]].values.tolist()
 
-m = folium.Map(location=[35.85, 128.95], zoom_start=10)
+kmeans = KMeans(n_clusters=3, random_state=0).fit(fire_coords)
+centers = kmeans.cluster_centers_.tolist()
+
+selected_idx = st.selectbox("📍 연결할 중심점을 선택하세요", list(range(1, len(centers)+1)))
+selected_center = centers[selected_idx - 1]
+
+# -----------------------------
+# 지도 생성
+# -----------------------------
+m = folium.Map(location=selected_center, zoom_start=10)
+
+# 히트맵 추가
 HeatMap(fire_coords, radius=15).add_to(m)
 
-# -------------------------------
-# MST 그래프 구성 및 연결
-G = nx.Graph()
-for i in range(len(shelter_coords)):
-    for j in range(i + 1, len(shelter_coords)):
-        dist = geodesic(shelter_coords[i], shelter_coords[j]).km
-        G.add_edge(i, j, weight=dist)
+# 중심점 마커 표시
+for idx, center in enumerate(centers):
+    folium.Marker(center, icon=folium.Icon(color="red"), tooltip=f"중심점 {idx+1}").add_to(m)
 
-mst = nx.minimum_spanning_tree(G)
+# 대피소 마커 추가 + 중심점과의 연결선
+for idx, shelter in enumerate(shelter_coords):
+    folium.Marker(shelter, icon=folium.Icon(color="blue"), tooltip=f"대피소 {idx+1}").add_to(m)
+    folium.PolyLine([selected_center, shelter], color="green", weight=2).add_to(m)
 
-# -------------------------------
-# 대피소 마커 및 MST 선 추가
-for idx, coord in enumerate(shelter_coords):
-    folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"대피소 {idx+1}").add_to(m)
-
-for u, v in mst.edges:
-    folium.PolyLine([shelter_coords[u], shelter_coords[v]], color="green").add_to(m)
-
-# -------------------------------
-# Streamlit 표시
-st.subheader("🗺️ 산불 히트맵 + MST 기반 대피소 연결 (경상도)")
+# -----------------------------
+# 지도 출력
+# -----------------------------
+st.subheader("🗺️ 산불 히트맵 및 중심점 기반 대피소 연결 시각화")
 st_folium(m, width=1000, height=600)
 
-st.caption("⚠️ 임의의 경상도 예시 데이터 기반 - 파일 업로드 없이 작동")
+st.markdown("---")
+st.caption("🔥 예시 데이터 기반 | 중심점에서 대피소 연결 시각화 (MST 아님)")
