@@ -1,4 +1,4 @@
-# streamlit_app.py
+# streamlit_app.py (되기만 하게 만든 버전)
 import streamlit as st
 import pandas as pd
 import folium
@@ -6,97 +6,58 @@ from folium.plugins import HeatMap
 from streamlit_folium import st_folium
 from geopy.distance import geodesic
 import networkx as nx
-import chardet
+import random
 
 # -----------------------------
-# 파일 업로드
+# 예제 데이터 사용 (업로드 없이 동작)
 # -----------------------------
-st.sidebar.title("📂 CSV 파일 업로드")
-fire_file = st.sidebar.file_uploader("🔥 산불 통계 데이터 업로드", type="csv")
-shelter_file = st.sidebar.file_uploader("🏠 대피소 목록 업로드", type="csv")
+st.title("🔥 산불 히트맵 & MST 대피소 연결")
 
-def detect_encoding(file):
-    raw = file.read()
-    result = chardet.detect(raw)
-    file.seek(0)
-    return result['encoding']
+# 샘플 산불 좌표 (서울 인근)
+fires = pd.DataFrame({
+    "위도": [37.55 + random.uniform(-0.03, 0.03) for _ in range(50)],
+    "경도": [126.98 + random.uniform(-0.03, 0.03) for _ in range(50)]
+})
 
-if fire_file and shelter_file:
-    try:
-        fire_encoding = detect_encoding(fire_file)
-        fires = pd.read_csv(fire_file, encoding=fire_encoding)
-    except Exception as e:
-        st.error(f"🔥 산불 데이터 파일 로딩 실패: {e}")
-        st.stop()
+# 샘플 대피소 좌표 (서울 인근)
+shelters = pd.DataFrame({
+    "위도": [37.56, 37.57, 37.54, 37.55, 37.58],
+    "경도": [126.97, 126.99, 126.96, 126.95, 126.98]
+})
 
-    try:
-        shelter_encoding = detect_encoding(shelter_file)
-        shelters = pd.read_csv(shelter_file, encoding=shelter_encoding)
-    except Exception as e:
-        st.error(f"🏠 대피소 데이터 파일 로딩 실패: {e}")
-        st.stop()
+# -----------------------------
+# 히트맵 시각화
+# -----------------------------
+fire_coords = fires[["위도", "경도"]].values.tolist()
+shelter_coords = shelters[["위도", "경도"]].values.tolist()
 
-    # -----------------------------
-    # 열 이름 확인 및 정제
-    # -----------------------------
-    fires.columns = fires.columns.str.strip().str.replace('"', '')
-    shelters.columns = shelters.columns.str.strip().str.replace('"', '')
+m = folium.Map(location=fire_coords[0], zoom_start=12)
+HeatMap(fire_coords, radius=15).add_to(m)
 
-    st.write("🔥 산불 데이터 열 목록:", fires.columns.tolist())
-    st.write("🏠 대피소 데이터 열 목록:", shelters.columns.tolist())
+# -----------------------------
+# MST 연결
+# -----------------------------
+G = nx.Graph()
+for i in range(len(shelter_coords)):
+    for j in range(i + 1, len(shelter_coords)):
+        dist = geodesic(shelter_coords[i], shelter_coords[j]).km
+        G.add_edge(i, j, weight=dist)
 
-    def find_lat_lon(df):
-        lat_col = next((col for col in df.columns if "위도" in col), None)
-        lon_col = next((col for col in df.columns if "경도" in col), None)
-        return lat_col, lon_col
+mst = nx.minimum_spanning_tree(G)
 
-    fire_lat_col, fire_lon_col = find_lat_lon(fires)
-    shelter_lat_col, shelter_lon_col = find_lat_lon(shelters)
+# -----------------------------
+# 대피소 마커 및 선 그리기
+# -----------------------------
+for idx, coord in enumerate(shelter_coords):
+    folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx+1}").add_to(m)
 
-    if not fire_lat_col or not fire_lon_col:
-        st.error(f"🔥 산불 데이터에서 위도/경도 열을 찾을 수 없습니다. 열 목록: {fires.columns.tolist()}")
-        st.stop()
-    if not shelter_lat_col or not shelter_lon_col:
-        st.error(f"🏠 대피소 데이터에서 위도/경도 열을 찾을 수 없습니다. 열 목록: {shelters.columns.tolist()}")
-        st.stop()
+for u, v in mst.edges:
+    point1 = shelter_coords[u]
+    point2 = shelter_coords[v]
+    folium.PolyLine([point1, point2], color="green").add_to(m)
 
-    fires = fires.dropna(subset=[fire_lat_col, fire_lon_col])
-    shelters = shelters.dropna(subset=[shelter_lat_col, shelter_lon_col])
-    fire_coords = fires[[fire_lat_col, fire_lon_col]].values.tolist()
-    shelter_coords = shelters[[shelter_lat_col, shelter_lon_col]].values.tolist()
+st.subheader("🗺️ 산불 발생 히트맵 + MST 대피소 연결")
+st_folium(m, width=900, height=600)
 
-    # -----------------------------
-    # 지도 생성
-    # -----------------------------
-    m = folium.Map(location=fire_coords[0], zoom_start=11)
-    HeatMap(fire_coords, radius=15).add_to(m)
-
-    # -----------------------------
-    # MST (최소신장트리) 계산
-    # -----------------------------
-    G = nx.Graph()
-    for i in range(len(shelter_coords)):
-        for j in range(i + 1, len(shelter_coords)):
-            dist = geodesic(shelter_coords[i], shelter_coords[j]).km
-            G.add_edge(i, j, weight=dist)
-
-    mst = nx.minimum_spanning_tree(G)
-
-    # -----------------------------
-    # 대피소 및 MST 연결 시각화
-    # -----------------------------
-    for idx, coord in enumerate(shelter_coords):
-        folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx+1}").add_to(m)
-
-    for u, v in mst.edges:
-        point1 = shelter_coords[u]
-        point2 = shelter_coords[v]
-        folium.PolyLine([point1, point2], color="green").add_to(m)
-
-    st.subheader("🗺️ 산불 히트맵 및 MST 대피소 연결")
-    st_data = st_folium(m, width=900, height=600)
-
-    st.markdown("---")
-    st.caption("데이터 출처: 산림청, 환경부, 공공데이터포털")
-else:
-    st.warning("좌측 사이드바에서 두 개의 CSV 파일을 업로드하세요.")
+st.markdown("---")
+st.caption("⚠️ 예시 데이터 기반 - 업로드 없이 작동되도록 구현됨")
