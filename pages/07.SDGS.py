@@ -8,13 +8,15 @@ from sklearn.metrics import classification_report
 from geopy.distance import geodesic
 import networkx as nx
 from streamlit_folium import st_folium
+import random
+from geopy.geocoders import Nominatim
 
 # ---------------------
 # 데이터 불러오기
 # ---------------------
 @st.cache_data
 def load_data():
-    fires = pd.read_csv("산림청_산불상황관제시스템 산불통계데이터_20241016.csv")
+    fires = pd.read_csv("산림청_산불상황관제시스템 산불통계데이터_20241016.csv", encoding='cp949')
     shelters = pd.read_csv("chemical_shelters.csv")
     return fires, shelters
 
@@ -26,7 +28,6 @@ fires, shelters = load_data()
 fires = fires.dropna(subset=["발생장소_시도", "발생장소_시군구"])
 fires = fires.sample(50, random_state=0)
 
-import random
 random.seed(42)
 fires["기온(℃)"] = [round(random.uniform(10, 30), 1) for _ in range(len(fires))]
 fires["습도(%)"] = [random.randint(30, 90) for _ in range(len(fires))]
@@ -67,14 +68,14 @@ st.write(f"예측 결과: {'🔥 위험' if pred else '✅ 낮음'} (확률: {pr
 # ---------------------
 # 위치 기반 좌표 설정
 # ---------------------
-from geopy.geocoders import Nominatim
 geolocator = Nominatim(user_agent="fire_app")
 location = geolocator.geocode(f"{selected_city} {selected_gu}")
 user_coord = (location.latitude, location.longitude)
 
 # ---------------------
-# 가장 가까운 대피소 찾기 (다익스트라 유사 방식)
+# 가장 가까운 대피소 찾기
 # ---------------------
+shelters = shelters.dropna(subset=["위도", "경도"])
 shelters["거리(km)"] = shelters.apply(lambda row: geodesic(user_coord, (row["위도"], row["경도"])).km, axis=1)
 closest_shelters = shelters.sort_values("거리(km)").head(5)
 
@@ -87,15 +88,16 @@ folium.Marker(user_coord, tooltip="현재 위치", icon=folium.Icon(color="red")
 for _, row in closest_shelters.iterrows():
     folium.Marker(
         [row["위도"], row["경도"]],
-        tooltip=f"대피소: {row['시설명']}",
+        tooltip=f"대피소: {row['시설명'] if '시설명' in row else '이름없음'}",
         icon=folium.Icon(color="blue", icon="info-sign")
     ).add_to(m)
     folium.PolyLine([user_coord, (row["위도"], row["경도"])]).add_to(m)
 
-# 위험 지역 HeatMap (샘플)
-heat_data = fires.dropna(subset=["위도", "경도"])
-if not heat_data.empty:
-    HeatMap(heat_data[["위도", "경도"]].values, radius=15).add_to(m)
+# 위험 지역 HeatMap (위도/경도 있을 경우에만)
+if "위도" in fires.columns and "경도" in fires.columns:
+    heat_data = fires.dropna(subset=["위도", "경도"])
+    if not heat_data.empty:
+        HeatMap(heat_data[["위도", "경도"]].values, radius=15).add_to(m)
 
 st.subheader("🗺️ 지도 시각화")
 st_data = st_folium(m, width=700, height=500)
