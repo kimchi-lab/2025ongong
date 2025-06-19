@@ -16,10 +16,9 @@ from geopy.geocoders import Nominatim
 # ---------------------
 @st.cache_data
 def load_data():
-    fires = pd.read_csv("pages/fire_data.csv", encoding='cp949')
-    shelters = pd.read_csv("pages/chemical_shelters.csv")
+    fires = pd.read_csv("fire_data.csv", encoding='cp949')
+    shelters = pd.read_csv("chemical_shelters.csv")
     return fires, shelters
-
 
 fires, shelters = load_data()
 
