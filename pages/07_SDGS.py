@@ -37,27 +37,24 @@ if fire_file and shelter_file:
         st.stop()
 
     # -----------------------------
-    # 열 이름 확인
+    # 열 이름 확인 및 자동 탐지
     # -----------------------------
     st.write("🔥 산불 데이터 열 목록:", fires.columns.tolist())
     st.write("🏠 대피소 데이터 열 목록:", shelters.columns.tolist())
 
-    # -----------------------------
-    # 열 이름 지정
-    # -----------------------------
-    fire_lat_col = "위도"
-    fire_lon_col = "경도"
-    shelter_lat_col = "\"위도\""
-    shelter_lon_col = "\"경도\""
+    def find_lat_lon(df):
+        lat_col = next((col for col in df.columns if "위도" in col), None)
+        lon_col = next((col for col in df.columns if "경도" in col), None)
+        return lat_col, lon_col
 
-    # -----------------------------
-    # 데이터 전처리
-    # -----------------------------
-    if fire_lat_col not in fires.columns or fire_lon_col not in fires.columns:
-        st.error("🔥 산불 데이터에 '위도' 또는 '경도' 열이 없습니다.")
+    fire_lat_col, fire_lon_col = find_lat_lon(fires)
+    shelter_lat_col, shelter_lon_col = find_lat_lon(shelters)
+
+    if not fire_lat_col or not fire_lon_col:
+        st.error(f"🔥 산불 데이터에서 위도/경도 열을 찾을 수 없습니다. 열 목록: {fires.columns.tolist()}")
         st.stop()
-    if shelter_lat_col not in shelters.columns or shelter_lon_col not in shelters.columns:
-        st.error("🏠 대피소 데이터에 '위도' 또는 '경도' 열이 없습니다.")
+    if not shelter_lat_col or not shelter_lon_col:
+        st.error(f"🏠 대피소 데이터에서 위도/경도 열을 찾을 수 없습니다. 열 목록: {shelters.columns.tolist()}")
         st.stop()
 
     fires = fires.dropna(subset=[fire_lat_col, fire_lon_col])
