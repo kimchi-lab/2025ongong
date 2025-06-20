@@ -92,8 +92,20 @@ fires["위험도"] = model.predict(pd.DataFrame({
 }))
 
 # -------------------------------
-# ❗ 캐시 제거하여 지도 고정
-def generate_map(fires, shelters, selected_center):
+# ✅ 지도 깜빡임 최소화 (캐싱 직접 관리)
+def generate_map_cached():
+    if "last_map" not in st.session_state:
+        st.session_state.last_map = None
+        st.session_state.last_region = None
+        st.session_state.last_center_id = None
+
+    if (
+        st.session_state.last_map is not None
+        and st.session_state.last_region == selected_region
+        and st.session_state.last_center_id == selected
+    ):
+        return st.session_state.last_map
+
     m = folium.Map(location=selected_center, zoom_start=12)
     heat_data = [[row["위도"], row["경도"], row["위험도"]] for _, row in fires.iterrows()]
     HeatMap(heat_data, radius=15, max_val=100).add_to(m)
@@ -102,7 +114,6 @@ def generate_map(fires, shelters, selected_center):
 
     G = nx.Graph()
     G.add_node("center")
-
     shelter_coords = shelters[["위도", "경도"]].values.tolist()
     connected_idxs = []
 
@@ -112,20 +123,20 @@ def generate_map(fires, shelters, selected_center):
             G.add_edge("center", idx, weight=distance)
             connected_idxs.append(idx)
 
-    if "center" not in G.nodes or len(connected_idxs) == 0:
-        st.warning("⚠️ 반경 5km 내 연결 가능한 대피소가 없습니다.")
-        return m
-
     for idx in connected_idxs:
         coord = shelter_coords[idx]
         dist = G["center"][idx]["weight"]
         folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx} ({dist:.0f}m)").add_to(m)
         folium.PolyLine([selected_center, coord], color="green").add_to(m)
 
+    # 상태 저장
+    st.session_state.last_map = m
+    st.session_state.last_region = selected_region
+    st.session_state.last_center_id = selected
     return m
 
 # -------------------------------
-m = generate_map(fires, shelters, selected_center)
+m = generate_map_cached()
 st.subheader("🗌 산불 히트맵 + 위험 중심점 ↔ 대피소 연결")
 st_data = st_folium(m, width=900, height=600)
 
