@@ -1,118 +1,127 @@
-# streamlit_app.py
+# streamlit_app.py (경상북도 히트맵 + 선택 중심점 연결 + 회귀 기반 위험도 예측)
 import streamlit as st
 import pandas as pd
-import numpy as np
 import folium
 from folium.plugins import HeatMap
 from streamlit_folium import st_folium
+from geopy.distance import geodesic
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestRegressor
+import numpy as np
 import matplotlib.pyplot as plt
+import random
 
 st.set_page_config(layout="wide")
-st.title("🔥 강원도 산불 위험도 예측 및 인근 대피소")
+st.title("🔥 경상북도 산불 위험 예측 및 대피소 연결 시각화")
 
 # -------------------------------
-# 1. 지역 선택 기반 지도 시각화
+# 샘플 산불 데이터 (경상북도 내 지역)
+@st.cache_data
+def generate_fire_data():
+    base_coords = {
+        "의성군": (36.35, 128.7),
+        "안동시": (36.57, 128.73),
+        "청송군": (36.43, 129.06),
+        "영양군": (36.66, 129.11),
+        "영덕군": (36.42, 129.37),
+        "울진군": (36.99, 129.4),
+        "대구광역시": (35.87, 128.6),
+    }
+    fires = []
+    for city, (lat, lon) in base_coords.items():
+        for _ in range(30):
+            fires.append([lat + random.uniform(-0.02, 0.02), lon + random.uniform(-0.02, 0.02)])
+
+    # 반드시 포함될 위험 지점 추가
+    fires.append([36.3821, 128.6967])  # 의성군 안평면 괴산리 산61 근처
+    fires.append([36.3802, 128.6286])  # 의성군 안계면 용기리 297-3 근처
+    return pd.DataFrame(fires, columns=["위도", "경도"])
+
+fires = generate_fire_data()
+
 # -------------------------------
-region_coords = {
-    "강릉": [37.75, 128.9],
-    "삼척": [37.45, 129.17],
-    "속초": [38.2, 128.6]
-}
-
-region = st.selectbox("📍 산불 집중 지역 선택", list(region_coords.keys()))
-center = region_coords[region]
-
-# 샘플 산불 데이터 생성 (선택 지역 주변에 생성)
-np.random.seed(42)
-fires = pd.DataFrame({
-    "위도": center[0] + np.random.normal(0, 0.015, 300),
-    "경도": center[1] + np.random.normal(0, 0.015, 300)
-})
-
-# 샘플 대피소 데이터 생성
+# 샘플 대피소 데이터
 shelters = pd.DataFrame({
-    "위도": center[0] + np.random.normal(0.01, 0.01, 6),
-    "경도": center[1] + np.random.normal(0.01, 0.01, 6)
+    "위도": [36.36, 36.58, 36.45, 36.65, 36.4, 36.98, 35.88],
+    "경도": [128.71, 128.74, 129.05, 129.1, 129.38, 129.42, 128.59]
 })
 
-# 중심점 (클러스터 중심) 3개 추출
+# -------------------------------
+# 사용자 선택: 시군구
+regions = ["의성군", "안동시", "청송군", "영양군", "영덕군", "울진군", "대구광역시"]
+region_coords = {
+    "의성군": [36.35, 128.7],
+    "안동시": [36.57, 128.73],
+    "청송군": [36.43, 129.06],
+    "영양군": [36.66, 129.11],
+    "영덕군": [36.42, 129.37],
+    "울진군": [36.99, 129.4],
+    "대구광역시": [35.87, 128.6],
+}
+selected_region = st.selectbox("📍 지역 선택", options=regions)
+center = region_coords[selected_region]
+
+# -------------------------------
+# 중심점 추출 (KMeans)
 coords = fires[["위도", "경도"]].values
 kmeans = KMeans(n_clusters=3, random_state=0).fit(coords)
 centroids = kmeans.cluster_centers_
 
+# 사용자 중심점 선택
 selected = st.selectbox("🔍 연결할 중심점 선택 (0~2)", options=list(range(3)))
 
-# 지도 생성 함수
+# -------------------------------
+# 지도 시각화 함수
 @st.cache_data
-
-def generate_map(center, fires, shelters, centroids, selected):
-    m = folium.Map(location=center, zoom_start=12)
+def generate_map(fires, shelters, centroids, selected, center):
+    m = folium.Map(location=center, zoom_start=11)
     HeatMap(fires[["위도", "경도"]].values.tolist(), radius=15).add_to(m)
+
     for i, (lat, lon) in enumerate(centroids):
         color = "red" if i == selected else "gray"
         folium.Marker([lat, lon], icon=folium.Icon(color=color), tooltip=f"중심점 {i}").add_to(m)
+
     shelter_coords = shelters[["위도", "경도"]].values.tolist()
     for idx, coord in enumerate(shelter_coords):
         folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx+1}").add_to(m)
+
     selected_center = centroids[selected]
     for coord in shelter_coords:
         folium.PolyLine([selected_center, coord], color="green").add_to(m)
+
     return m
 
-m = generate_map(center, fires, shelters, centroids, selected)
-st.subheader("🗺️ 선택 지역 산불 히트맵 및 중심점 ↔ 대피소 연결")
-st_folium(m, width=900, height=600)
+# -------------------------------
+# 지도 출력
+m = generate_map(fires, shelters, centroids, selected, center)
+st.subheader("🗺️ 선택 지역 산불 히트맵 및 대피소 연결 시각화")
+st_data = st_folium(m, width=900, height=600)
 
 # -------------------------------
-# 2. Random Forest 산불 위험도 예측
+# 회귀 모델로 위험도 예측
+@st.cache_data
+def generate_regression_data():
+    np.random.seed(42)
+    X = pd.DataFrame({
+        "산불발생이력": np.random.randint(0, 100, 100),
+        "기온편차": np.random.uniform(-5, 5, 100),
+        "습도편차": np.random.uniform(-10, 10, 100),
+        "풍량": np.random.uniform(0, 10, 100)
+    })
+    y = 100 - (X["습도편차"] + np.random.normal(0, 5, 100))  # 습도편차가 낮을수록 높게
+    model = RandomForestRegressor().fit(X, y)
+    preds = model.predict(X)
+    return X, preds
+
+X, preds = generate_regression_data()
+
 # -------------------------------
-st.markdown("---")
-st.header("랜덤포레스트회귀를 통한 산불 위험도 예측")
-
-# 샘플 데이터 (학습용)
-np.random.seed(42)
-train_X = pd.DataFrame({
-    "산불발생이력": np.random.randint(0, 10, 100),
-    "기온편차": np.random.normal(0, 2, 100),
-    "습도편차": np.random.normal(0, 5, 100),
-    "풍량": np.random.normal(2, 1, 100)
-})
-train_y = 80 - 5*train_X["습도편차"] + 3*train_X["기온편차"] + 2*train_X["산불발생이력"] + np.random.normal(0, 5, 100)
-train_y = np.clip(train_y, 0, 100)
-
-# 모델 학습
-model = RandomForestRegressor(n_estimators=100, random_state=0)
-model.fit(train_X, train_y)
-
-st.markdown("#### 🔢 입력 변수 설정")
-x1 = st.slider("산불발생이력 (최근 5년)", 0, 10, 5)
-x2 = st.slider("기온편차 (℃)", -5.0, 5.0, 0.0)
-x3 = st.slider("습도편차 (%)", -20.0, 20.0, 0.0)
-x4 = st.slider("풍량 (m/s)", 0.0, 10.0, 2.0)
-
-input_df = pd.DataFrame({
-    "산불발생이력": [x1],
-    "기온편차": [x2],
-    "습도편차": [x3],
-    "풍량": [x4]
-})
-
-# 예측
-risk = model.predict(input_df)[0]
-
-# 시각화
-st.markdown("#### 📊 산불 위험도 예측 결과")
-fig, ax = plt.subplots()
-ax.bar(["예측 위험도"], [risk], color="crimson")
-ax.set_ylim(0, 100)
+# 예측 결과 시각화
+st.subheader("📊 산불 위험도 예측 결과 ")
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.bar(range(len(preds[:20])), preds[:20], color="salmon")
+ax.set_title("샘플 지점별 산불 위험도 (0~100)")
 ax.set_ylabel("위험도 점수")
 st.pyplot(fig)
 
-if risk > 70:
-    st.error(f"🚨 매우 높은 위험도: {risk:.1f}점")
-elif risk > 40:
-    st.warning(f"⚠️ 중간 이상 위험도: {risk:.1f}점")
-else:
-    st.success(f"🟢 낮은 위험도: {risk:.1f}점")
+st.markdown("---")
