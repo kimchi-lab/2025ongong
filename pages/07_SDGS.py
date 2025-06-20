@@ -92,7 +92,7 @@ fires["위험도"] = model.predict(pd.DataFrame({
 }))
 
 # -------------------------------
-@st.cache_data
+# ❗ 캐시 제거하여 지도 고정
 def generate_map(fires, shelters, selected_center):
     m = folium.Map(location=selected_center, zoom_start=12)
     heat_data = [[row["위도"], row["경도"], row["위험도"]] for _, row in fires.iterrows()]
@@ -100,7 +100,6 @@ def generate_map(fires, shelters, selected_center):
 
     folium.Marker(selected_center, icon=folium.Icon(color="red"), tooltip="위험 중심점").add_to(m)
 
-    # 안전하게 center 노드 추가
     G = nx.Graph()
     G.add_node("center")
 
