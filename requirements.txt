@@ -1,7 +1,8 @@
 streamlit
 pandas
 folium
-scikit-learn
 streamlit-folium
 geopy
+scikit-learn
+numpy
 matplotlib
