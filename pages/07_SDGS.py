@@ -1,4 +1,3 @@
-# streamlit_app.py
 import streamlit as st
 import pandas as pd
 import folium
@@ -9,6 +8,7 @@ from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestRegressor
 import numpy as np
 import matplotlib.pyplot as plt
+import networkx as nx
 import random
 
 st.set_page_config(layout="wide")
@@ -31,7 +31,6 @@ def generate_fire_data():
     for city, (lat, lon) in base_coords.items():
         for _ in range(30):
             fires.append([lat + random.uniform(-0.02, 0.02), lon + random.uniform(-0.02, 0.02)])
-    # 반드시 포함할 위험 지점
     fires.append([36.3821, 128.6967])
     fires.append([36.3802, 128.6286])
     return pd.DataFrame(fires, columns=["위도", "경도"])
@@ -39,20 +38,19 @@ def generate_fire_data():
 fires = generate_fire_data()
 
 # -------------------------------
-# 예시 대피소 데이터 (샘플)
+# 대피소 샘플 데이터
 shelters = pd.DataFrame({
     "위도": [36.36, 36.58, 36.44, 36.65, 36.41, 36.97, 35.88, 36.38, 36.37],
     "경도": [128.68, 128.74, 129.05, 129.10, 129.36, 129.39, 128.61, 128.69, 128.63]
 })
 
 # -------------------------------
-# 지역 목록 및 좌표
+# 지역 정보
 regions = [
     "경상북도 의성군", "경상북도 안동시", "경상북도 청송군",
     "경상북도 영양군", "경상북도 영덕군", "경상북도 울진군",
     "대구광역시"
 ]
-
 region_coords = {
     "경상북도 의성군": [36.35, 128.7],
     "경상북도 안동시": [36.57, 128.73],
@@ -64,23 +62,18 @@ region_coords = {
 }
 
 selected_region = st.selectbox("📍 지역 선택", options=regions)
-
-# 예외 처리 추가
-if selected_region in region_coords:
-    center = region_coords[selected_region]
-else:
-    st.error(f"선택한 지역 '{selected_region}'이 좌표 목록에 없습니다.")
-    st.stop()
+center = region_coords.get(selected_region, [36.38, 128.69])  # 기본 중심점
 
 # -------------------------------
-# 중심점 추출 (KMeans 클러스터링)
+# 클러스터링 중심점 추출
 coords = fires[["위도", "경도"]].values
 kmeans = KMeans(n_clusters=3, random_state=0).fit(coords)
 centroids = kmeans.cluster_centers_
 selected = st.selectbox("🔍 연결할 중심점 선택 (0~2)", options=list(range(3)))
+selected_center = tuple(centroids[selected])
 
 # -------------------------------
-# 회귀 모델 생성 및 예측
+# 회귀 모델
 @st.cache_data
 def generate_regression_data():
     np.random.seed(42)
@@ -90,51 +83,53 @@ def generate_regression_data():
         "습도편차": np.random.uniform(-10, 10, 100),
         "풍량": np.random.uniform(0, 10, 100)
     })
-    y = 100 - (X["습도편차"] + np.random.normal(0, 5, 100))  # 예시 목적
+    y = 100 - (X["습도편차"] + np.random.normal(0, 5, 100))
     model = RandomForestRegressor().fit(X, y)
     preds = model.predict(X)
     return X, preds, model
 
 X, preds, model = generate_regression_data()
-
-# 실제 위험도 예측값 생성
-risk_scores = model.predict(pd.DataFrame({
+fires["위험도"] = model.predict(pd.DataFrame({
     "산불발생이력": np.random.randint(30, 80, len(fires)),
     "기온편차": np.random.uniform(-3, 3, len(fires)),
     "습도편차": np.random.uniform(-8, 5, len(fires)),
     "풍량": np.random.uniform(0, 6, len(fires))
 }))
-fires["위험도"] = risk_scores
 
 # -------------------------------
-# 지도 생성 함수
+# 지도 생성
 @st.cache_data
-def generate_map(fires, shelters, centroids, selected, center):
-    m = folium.Map(location=center, zoom_start=11)
+def generate_map(fires, shelters, selected_center):
+    m = folium.Map(location=selected_center, zoom_start=12)
     heat_data = [[row["위도"], row["경도"], row["위험도"]] for _, row in fires.iterrows()]
     HeatMap(heat_data, radius=15, max_val=100).add_to(m)
 
-    for i, (lat, lon) in enumerate(centroids):
-        color = "red" if i == selected else "gray"
-        folium.Marker([lat, lon], icon=folium.Icon(color=color), tooltip=f"중심점 {i}").add_to(m)
+    # 위험 중심점 마커
+    folium.Marker(selected_center, icon=folium.Icon(color="red"), tooltip="위험 중심점").add_to(m)
 
-    selected_center = centroids[selected]
+    # Dijkstra 연결: 반경 5km 내 shelter만 연결
+    G = nx.Graph()
     shelter_coords = shelters[["위도", "경도"]].values.tolist()
     for idx, coord in enumerate(shelter_coords):
-        distance = geodesic((selected_center[0], selected_center[1]), (coord[0], coord[1])).meters
-        if distance <= 2000:
-            folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx+1} ({distance:.0f}m)").add_to(m)
-            folium.PolyLine([selected_center, coord], color="green").add_to(m)
+        distance = geodesic(selected_center, coord).meters
+        if distance <= 5000:
+            G.add_edge("center", idx, weight=distance)
+
+    for idx in G.neighbors("center"):
+        coord = shelter_coords[idx]
+        dist = geodesic(selected_center, coord).meters
+        folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx} ({dist:.0f}m)").add_to(m)
+        folium.PolyLine([selected_center, coord], color="green").add_to(m)
 
     return m
 
 # -------------------------------
 # 시각화 출력
-m = generate_map(fires, shelters, centroids, selected, center)
-st.subheader("🗌 선택 지역 산불 히트맵 및 대피소 연결 시각화")
+m = generate_map(fires, shelters, selected_center)
+st.subheader("🗌 산불 히트맵 + 위험 중심점 ↔ 대피소 연결")
 st_data = st_folium(m, width=900, height=600)
 
-st.subheader("📊 산불 위험도 예측 결과 (사품)")
+st.subheader("📊 산불 위험도 예측 결과")
 fig, ax = plt.subplots(figsize=(10, 4))
 ax.bar(range(len(preds[:20])), preds[:20], color="salmon")
 ax.set_title("사품 지점별 산불 위험도 (0~100)")
