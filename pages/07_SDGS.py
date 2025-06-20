@@ -40,10 +40,10 @@ def generate_fire_data():
 fires = generate_fire_data()
 
 # -------------------------------
-# 샘플 대피소 데이터
+# 샘플 대피소 데이터 (확대)
 shelters = pd.DataFrame({
-    "위도": [36.36, 36.58, 36.45, 36.65, 36.4, 36.98, 35.88],
-    "경도": [128.71, 128.74, 129.05, 129.1, 129.38, 129.42, 128.59]
+    "위도": [36.36, 36.58, 36.45, 36.65, 36.4, 36.98, 35.88, 36.3840, 36.3830, 36.3850],
+    "경도": [128.71, 128.74, 129.05, 129.1, 129.38, 129.42, 128.59, 128.6950, 128.6975, 128.6985]
 })
 
 # -------------------------------
@@ -71,11 +71,39 @@ centroids = kmeans.cluster_centers_
 selected = st.selectbox("🔍 연결할 중심점 선택 (0~2)", options=list(range(3)))
 
 # -------------------------------
+# 회귀 모델로 위험도 예측 (임의 데이터)
+@st.cache_data
+def generate_regression_data():
+    np.random.seed(42)
+    X = pd.DataFrame({
+        "산불발생이력": np.random.randint(0, 100, 100),
+        "기온편차": np.random.uniform(-5, 5, 100),
+        "습도편차": np.random.uniform(-10, 10, 100),
+        "풍량": np.random.uniform(0, 10, 100)
+    })
+    y = 100 - (X["습도편차"] + np.random.normal(0, 5, 100))  # 습도편차가 낮을수록 높게
+    model = RandomForestRegressor().fit(X, y)
+    preds = model.predict(X)
+    return X, preds, model
+
+X, preds, model = generate_regression_data()
+
+# 예측 위험도와 히트맵에 매핑될 위험도 점수 생성
+risk_scores = model.predict(pd.DataFrame({
+    "산불발생이력": np.random.randint(30, 80, len(fires)),
+    "기온편차": np.random.uniform(-3, 3, len(fires)),
+    "습도편차": np.random.uniform(-8, 5, len(fires)),
+    "풍량": np.random.uniform(0, 6, len(fires))
+}))
+fires["위험도"] = risk_scores
+
+# -------------------------------
 # 지도 시각화 함수
 @st.cache_data
 def generate_map(fires, shelters, centroids, selected, center):
     m = folium.Map(location=center, zoom_start=11)
-    HeatMap(fires[["위도", "경도"]].values.tolist(), radius=15).add_to(m)
+    heat_data = [[row["위도"], row["경도"], row["위험도"]] for _, row in fires.iterrows()]
+    HeatMap(heat_data, radius=15, max_val=100).add_to(m)
 
     for i, (lat, lon) in enumerate(centroids):
         color = "red" if i == selected else "gray"
@@ -98,26 +126,8 @@ st.subheader("🗺️ 선택 지역 산불 히트맵 및 대피소 연결 시각
 st_data = st_folium(m, width=900, height=600)
 
 # -------------------------------
-# 회귀 모델로 위험도 예측
-@st.cache_data
-def generate_regression_data():
-    np.random.seed(42)
-    X = pd.DataFrame({
-        "산불발생이력": np.random.randint(0, 100, 100),
-        "기온편차": np.random.uniform(-5, 5, 100),
-        "습도편차": np.random.uniform(-10, 10, 100),
-        "풍량": np.random.uniform(0, 10, 100)
-    })
-    y = 100 - (X["습도편차"] + np.random.normal(0, 5, 100))  # 습도편차가 낮을수록 높게
-    model = RandomForestRegressor().fit(X, y)
-    preds = model.predict(X)
-    return X, preds
-
-X, preds = generate_regression_data()
-
-# -------------------------------
 # 예측 결과 시각화
-st.subheader("📊 산불 위험도 예측 결과 ")
+st.subheader("📊 산불 위험도 예측 결과 (샘플)")
 fig, ax = plt.subplots(figsize=(10, 4))
 ax.bar(range(len(preds[:20])), preds[:20], color="salmon")
 ax.set_title("샘플 지점별 산불 위험도 (0~100)")
