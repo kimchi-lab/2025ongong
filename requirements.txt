@@ -2,6 +2,6 @@ streamlit
 pandas
 folium
 scikit-learn
-geopy
 streamlit-folium
+geopy
 matplotlib
