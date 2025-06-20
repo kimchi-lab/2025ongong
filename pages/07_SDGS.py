@@ -15,7 +15,6 @@ st.set_page_config(layout="wide")
 st.title("🔥 경상북도 산불 위험 예측 및 대피소 연결 시각화")
 
 # -------------------------------
-# 산불 데이터 생성
 @st.cache_data
 def generate_fire_data():
     base_coords = {
@@ -38,14 +37,12 @@ def generate_fire_data():
 fires = generate_fire_data()
 
 # -------------------------------
-# 대피소 샘플 데이터
 shelters = pd.DataFrame({
     "위도": [36.36, 36.58, 36.44, 36.65, 36.41, 36.97, 35.88, 36.38, 36.37],
     "경도": [128.68, 128.74, 129.05, 129.10, 129.36, 129.39, 128.61, 128.69, 128.63]
 })
 
 # -------------------------------
-# 지역 정보
 regions = [
     "경상북도 의성군", "경상북도 안동시", "경상북도 청송군",
     "경상북도 영양군", "경상북도 영덕군", "경상북도 울진군",
@@ -62,10 +59,9 @@ region_coords = {
 }
 
 selected_region = st.selectbox("📍 지역 선택", options=regions)
-center = region_coords.get(selected_region, [36.38, 128.69])  # 기본 중심점
+center = region_coords.get(selected_region, [36.38, 128.69])
 
 # -------------------------------
-# 클러스터링 중심점 추출
 coords = fires[["위도", "경도"]].values
 kmeans = KMeans(n_clusters=3, random_state=0).fit(coords)
 centroids = kmeans.cluster_centers_
@@ -73,7 +69,6 @@ selected = st.selectbox("🔍 연결할 중심점 선택 (0~2)", options=list(ra
 selected_center = tuple(centroids[selected])
 
 # -------------------------------
-# 회귀 모델
 @st.cache_data
 def generate_regression_data():
     np.random.seed(42)
@@ -97,34 +92,40 @@ fires["위험도"] = model.predict(pd.DataFrame({
 }))
 
 # -------------------------------
-# 지도 생성
 @st.cache_data
 def generate_map(fires, shelters, selected_center):
     m = folium.Map(location=selected_center, zoom_start=12)
     heat_data = [[row["위도"], row["경도"], row["위험도"]] for _, row in fires.iterrows()]
     HeatMap(heat_data, radius=15, max_val=100).add_to(m)
 
-    # 위험 중심점 마커
     folium.Marker(selected_center, icon=folium.Icon(color="red"), tooltip="위험 중심점").add_to(m)
 
-    # Dijkstra 연결: 반경 5km 내 shelter만 연결
+    # 안전하게 center 노드 추가
     G = nx.Graph()
+    G.add_node("center")
+
     shelter_coords = shelters[["위도", "경도"]].values.tolist()
+    connected_idxs = []
+
     for idx, coord in enumerate(shelter_coords):
         distance = geodesic(selected_center, coord).meters
         if distance <= 5000:
             G.add_edge("center", idx, weight=distance)
+            connected_idxs.append(idx)
 
-    for idx in G.neighbors("center"):
+    if "center" not in G.nodes or len(connected_idxs) == 0:
+        st.warning("⚠️ 반경 5km 내 연결 가능한 대피소가 없습니다.")
+        return m
+
+    for idx in connected_idxs:
         coord = shelter_coords[idx]
-        dist = geodesic(selected_center, coord).meters
+        dist = G["center"][idx]["weight"]
         folium.Marker(coord, icon=folium.Icon(color="blue"), tooltip=f"Shelter {idx} ({dist:.0f}m)").add_to(m)
         folium.PolyLine([selected_center, coord], color="green").add_to(m)
 
     return m
 
 # -------------------------------
-# 시각화 출력
 m = generate_map(fires, shelters, selected_center)
 st.subheader("🗌 산불 히트맵 + 위험 중심점 ↔ 대피소 연결")
 st_data = st_folium(m, width=900, height=600)
