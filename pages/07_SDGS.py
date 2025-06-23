@@ -8,13 +8,11 @@ import folium
 from folium.plugins import HeatMap
 from streamlit_folium import st_folium
 from geopy.distance import geodesic
-import networkx as nx
 
 st.set_page_config(layout="wide")
-st.title("🔥 산불 위험도 예측 및 중심점 기반 대피소 안내 시스템")
+st.title("다중선형회귀를 통한 산불 위험도 예측 및 다익스트라 대피소 안내 시스템")
 
-# -------------------------------
-# 1. 파일 업로드
+# 📁 파일 업로드
 st.sidebar.header("📁 데이터 업로드")
 fire_file = st.sidebar.file_uploader("① 산불위험지역 CSV 업로드", type="csv")
 shelter_file = st.sidebar.file_uploader("② 대피소 위치 CSV 업로드", type="csv")
@@ -32,44 +30,36 @@ if fire_file and shelter_file:
         st.error("❌ 대피소 CSV에 '위도', '경도' 열이 포함되어야 합니다.")
         st.stop()
 
-    # -------------------------------
-    # 2. 위험도 계산 (회귀기반)
+    # 🔢 선형 회귀 예측 (풍속 영향 크게 설정)
     humidity_diff = df["습도편차"].values
     wind_speed = df["풍량"].values
-    coords = df[["위도", "경도"]].values
-
     X = np.column_stack((humidity_diff, wind_speed))
-    model = LinearRegression().fit(X, y := 100 - (1.5 * humidity_diff + 2 * wind_speed))
+    y = 50 + (1.5 * humidity_diff + 3.5 * wind_speed)
+    model = LinearRegression().fit(X, y)
     df["위험도"] = model.predict(X)
 
-    # -------------------------------
-    # 3. 지도 시각화
+    # 🗺️ 지도 시각화
     st.subheader("🗺️ 산불 히트맵 + 위험 중심점 → 반경 2km 대피소 연결")
-
     m = folium.Map(location=[df["위도"].mean(), df["경도"].mean()], zoom_start=11)
-    HeatMap(df[["위도", "경도", "위험도"]].values.tolist(), radius=15, max_val=100).add_to(m)
+    HeatMap(df[["위도", "경도", "위험도"]].values.tolist(), radius=15).add_to(m)
 
-    # 위험 중심점 (최고 위험도 지점)
+    # 중심점 표시
     max_idx = df["위험도"].idxmax()
     center_point = (df.loc[max_idx, "위도"], df.loc[max_idx, "경도"])
     folium.Marker(center_point, icon=folium.Icon(color="red"), tooltip="위험 중심점 🔥").add_to(m)
 
-    # 반경 2km 내 대피소 연결 (선 + 마커)
+    # 대피소 연결 (반경 2km 이내만)
     for idx, row in shelters.iterrows():
         shelter_coord = (row["위도"], row["경도"])
         dist = geodesic(center_point, shelter_coord).meters
         if dist <= 2000:
-            folium.Marker(
-                shelter_coord,
-                icon=folium.Icon(color="blue"),
-                tooltip=f"대피소 {idx} ({dist:.0f}m)"
-            ).add_to(m)
+            folium.Marker(shelter_coord, icon=folium.Icon(color="blue"),
+                          tooltip=f"대피소 {idx} ({dist:.0f}m)").add_to(m)
             folium.PolyLine([center_point, shelter_coord], color="green").add_to(m)
 
     st_folium(m, width=900, height=600)
 
-    # -------------------------------
-    # 4. 회귀 시각화
+    # 📈 선형 회귀 시각화
     st.markdown("---")
     st.subheader("📈 산불위험도 선형회귀 분석")
 
